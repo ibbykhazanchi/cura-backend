@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, conint
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -44,6 +44,24 @@ class UsageCreate(UsageBase):
     pass
 
 class UsageResponse(UsageBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class CheckInBase(BaseModel):
+    transcript: str
+    side_effects: List[str]
+    red_flags: List[str]
+    mood: conint(ge=1, le=10)  # Constrains mood to be between 1 and 10
+    clinical_effectiveness: List[str]
+    date: Optional[datetime] = None
+
+class CheckInCreate(CheckInBase):
+    pass
+
+class CheckInResponse(CheckInBase):
     id: int
     user_id: int
     created_at: datetime
