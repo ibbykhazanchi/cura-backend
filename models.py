@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Enum, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
@@ -6,18 +6,12 @@ import enum
 
 Base = declarative_base()
 
-class FrequencyType(enum.Enum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
-
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     full_name = Column(String)
-    password = Column(String)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     prescriptions = relationship("Prescription", back_populates="user")
     usage_logs = relationship("Usage", back_populates="user")
@@ -30,8 +24,7 @@ class Prescription(Base):
     medication_name = Column(String, index=True)
     dosage = Column(String)
     pills_per_dose = Column(Integer)
-    frequency_type = Column(Enum(FrequencyType))
-    frequency_value = Column(Integer)
+    times_per_day = Column(Integer)  # Number of times per day (1 = once daily, 2 = twice daily, etc.)
     special_instructions = Column(JSON)
     start_date = Column(DateTime)
     end_date = Column(DateTime, nullable=True)

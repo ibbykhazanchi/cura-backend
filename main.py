@@ -1,14 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
 import logging
-from models import FrequencyType
 
 import models
 import database
 from database import engine
+import schemas
+import adherence
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,56 +19,6 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Prescription Management API", debug=True)
 
-# Pydantic models for request/response validation
-class UserBase(BaseModel):
-    email: EmailStr
-    full_name: str
-
-class UserCreate(UserBase):
-    password: str
-
-class UserResponse(UserBase):
-    id: int
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-class PrescriptionBase(BaseModel):
-    medication_name: str
-    dosage: str
-    pills_per_dose: int
-    frequency_type: FrequencyType
-    frequency_value: int
-    special_instructions: Optional[List[str]] = None
-    start_date: datetime
-    end_date: Optional[datetime] = None
-    prescription_metadata: Optional[Dict[str, Any]] = None
-
-class PrescriptionCreate(PrescriptionBase):
-    pass
-
-class PrescriptionResponse(PrescriptionBase):
-    id: int
-    user_id: int
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-class UsageBase(BaseModel):
-    prescription_id: int
-
-class UsageCreate(UsageBase):
-    pass
-
-class UsageResponse(UsageBase):
-    id: int
-    user_id: int
-    taken_at: datetime
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
 # Dependency
 def get_db():
     db = database.SessionLocal()
@@ -78,8 +28,8 @@ def get_db():
         db.close()
 
 # User Management Endpoints
-@app.post("/users/", response_model=UserResponse)
-async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+@app.post("/users/", response_model=schemas.UserResponse)
+async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     logger.info(f"Received request to create user with email: {user.email}")
     # Check if user already exists
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
@@ -90,7 +40,6 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = models.User(
         email=user.email,
         full_name=user.full_name,
-        password=user.password
     )
     db.add(db_user)
     db.commit()
@@ -98,15 +47,15 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     logger.info(f"Successfully created user with ID: {db_user.id}")
     return db_user
 
-@app.get("/users/{user_id}", response_model=UserResponse)
+@app.get("/users/{user_id}", response_model=schemas.UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
-@app.put("/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user: UserBase, db: Session = Depends(get_db)):
+@app.put("/users/{user_id}", response_model=schemas.UserResponse)
+def update_user(user_id: int, user: schemas.UserBase, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -136,10 +85,10 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     return {"message": "User deleted successfully"}
 
 # Prescription Endpoints
-@app.post("/users/{user_id}/prescriptions/", response_model=PrescriptionResponse)
+@app.post("/users/{user_id}/prescriptions/", response_model=schemas.PrescriptionResponse)
 async def create_prescription(
     user_id: int,
-    prescription: PrescriptionCreate,
+    prescription: schemas.PrescriptionCreate,
     db: Session = Depends(get_db)
 ):
     # Check if user exists
@@ -153,8 +102,7 @@ async def create_prescription(
         medication_name=prescription.medication_name,
         dosage=prescription.dosage,
         pills_per_dose=prescription.pills_per_dose,
-        frequency_type=prescription.frequency_type,
-        frequency_value=prescription.frequency_value,
+        times_per_day=prescription.times_per_day,
         special_instructions=prescription.special_instructions,
         start_date=prescription.start_date,
         end_date=prescription.end_date,
@@ -167,7 +115,7 @@ async def create_prescription(
     logger.info(f"Successfully created prescription with ID: {db_prescription.id} for user: {user_id}")
     return db_prescription
 
-@app.get("/users/{user_id}/prescriptions", response_model=List[PrescriptionResponse])
+@app.get("/users/{user_id}/prescriptions", response_model=List[schemas.PrescriptionResponse])
 def get_user_prescriptions(user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user is None:
@@ -180,10 +128,10 @@ def get_user_prescriptions(user_id: int, db: Session = Depends(get_db)):
     return prescriptions
 
 # Usage Endpoints
-@app.post("/users/{user_id}/usage/", response_model=UsageResponse)
+@app.post("/users/{user_id}/usage/", response_model=schemas.UsageResponse)
 async def log_usage(
     user_id: int,
-    usage: UsageCreate,
+    usage: schemas.UsageCreate,
     db: Session = Depends(get_db)
 ):
     # Check if user exists
@@ -202,7 +150,8 @@ async def log_usage(
     # Create usage log
     db_usage = models.Usage(
         user_id=user_id,
-        prescription_id=usage.prescription_id
+        prescription_id=usage.prescription_id,
+        taken_at=usage.taken_at
     )
     
     db.add(db_usage)
@@ -211,7 +160,7 @@ async def log_usage(
     logger.info(f"Successfully logged usage for prescription {usage.prescription_id} by user {user_id}")
     return db_usage
 
-@app.get("/users/{user_id}/usage/", response_model=List[UsageResponse])
+@app.get("/users/{user_id}/usage/", response_model=List[schemas.UsageResponse])
 def get_user_usage(
     user_id: int,
     prescription_id: Optional[int] = None,
@@ -248,6 +197,54 @@ def get_user_usage(
     query = query.order_by(models.Usage.taken_at.desc())
     
     return query.all()
+
+@app.get("/users/{user_id}/prescriptions/{prescription_id}/adherence", response_model=dict)
+def get_prescription_adherence(
+    user_id: int,
+    prescription_id: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    late_threshold_hours: Optional[int] = 2,
+    db: Session = Depends(get_db)
+):
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get prescription
+    db_prescription = db.query(models.Prescription).filter(
+        models.Prescription.id == prescription_id,
+        models.Prescription.user_id == user_id
+    ).first()
+    if db_prescription is None:
+        raise HTTPException(status_code=404, detail="Prescription not found or does not belong to user")
+    
+    # Get usage logs for this prescription
+    usage_logs = db.query(models.Usage).filter(
+        models.Usage.user_id == user_id,
+        models.Usage.prescription_id == prescription_id
+    ).all()
+    
+    # Calculate adherence
+    result = adherence.calculate_adherence(
+        prescription=db_prescription,
+        usage_logs=usage_logs,
+        start_date=start_date,
+        end_date=end_date,
+        late_threshold_hours=late_threshold_hours
+    )
+    
+    # Convert result to dictionary
+    return {
+        "total_expected_doses": result.total_expected_doses,
+        "total_taken_doses": result.total_taken_doses,
+        "missed_doses": result.missed_doses,
+        "late_doses": result.late_doses,
+        "missed_dates": [d.isoformat() for d in result.missed_dates],
+        "late_dates": [d.isoformat() for d in result.late_dates],
+        "details": result.details
+    }
 
 if __name__ == "__main__":
     import uvicorn
