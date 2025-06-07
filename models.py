@@ -20,6 +20,7 @@ class User(Base):
     password = Column(String)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     prescriptions = relationship("Prescription", back_populates="user")
+    usage_logs = relationship("Usage", back_populates="user")
 
 class Prescription(Base):
     __tablename__ = "prescriptions"
@@ -37,4 +38,18 @@ class Prescription(Base):
     prescription_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
-    user = relationship("User", back_populates="prescriptions") 
+
+    user = relationship("User", back_populates="prescriptions")
+    usage_logs = relationship("Usage", back_populates="prescription")
+
+class Usage(Base):
+    __tablename__ = "usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    prescription_id = Column(Integer, ForeignKey("prescriptions.id"))
+    taken_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    
+    user = relationship("User", back_populates="usage_logs")
+    prescription = relationship("Prescription", back_populates="usage_logs") 

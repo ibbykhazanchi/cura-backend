@@ -55,6 +55,20 @@ class PrescriptionResponse(PrescriptionBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class UsageBase(BaseModel):
+    prescription_id: int
+
+class UsageCreate(UsageBase):
+    pass
+
+class UsageResponse(UsageBase):
+    id: int
+    user_id: int
+    taken_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 # Dependency
 def get_db():
     db = database.SessionLocal()
@@ -164,6 +178,76 @@ def get_user_prescriptions(user_id: int, db: Session = Depends(get_db)):
     ).all()
     
     return prescriptions
+
+# Usage Endpoints
+@app.post("/users/{user_id}/usage/", response_model=UsageResponse)
+async def log_usage(
+    user_id: int,
+    usage: UsageCreate,
+    db: Session = Depends(get_db)
+):
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if prescription exists and belongs to user
+    db_prescription = db.query(models.Prescription).filter(
+        models.Prescription.id == usage.prescription_id,
+        models.Prescription.user_id == user_id
+    ).first()
+    if db_prescription is None:
+        raise HTTPException(status_code=404, detail="Prescription not found or does not belong to user")
+    
+    # Create usage log
+    db_usage = models.Usage(
+        user_id=user_id,
+        prescription_id=usage.prescription_id
+    )
+    
+    db.add(db_usage)
+    db.commit()
+    db.refresh(db_usage)
+    logger.info(f"Successfully logged usage for prescription {usage.prescription_id} by user {user_id}")
+    return db_usage
+
+@app.get("/users/{user_id}/usage/", response_model=List[UsageResponse])
+def get_user_usage(
+    user_id: int,
+    prescription_id: Optional[int] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    db: Session = Depends(get_db)
+):
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Build query
+    query = db.query(models.Usage).filter(models.Usage.user_id == user_id)
+    
+    # Apply prescription filter if provided
+    if prescription_id:
+        # Check if prescription exists and belongs to user
+        db_prescription = db.query(models.Prescription).filter(
+            models.Prescription.id == prescription_id,
+            models.Prescription.user_id == user_id
+        ).first()
+        if db_prescription is None:
+            raise HTTPException(status_code=404, detail="Prescription not found or does not belong to user")
+        query = query.filter(models.Usage.prescription_id == prescription_id)
+    
+    # Apply date filters if provided
+    if start_date:
+        query = query.filter(models.Usage.taken_at >= start_date)
+    if end_date:
+        query = query.filter(models.Usage.taken_at <= end_date)
+    
+    # Order by taken_at descending
+    query = query.order_by(models.Usage.taken_at.desc())
+    
+    return query.all()
 
 if __name__ == "__main__":
     import uvicorn
