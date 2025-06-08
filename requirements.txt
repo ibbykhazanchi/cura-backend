@@ -9,3 +9,4 @@ pytest==8.4.0
 email-validator
 httpx==0.26.0
 python-dotenv==1.0.0
+openai==1.84.0
