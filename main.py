@@ -3,6 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
 import logging
+import httpx
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 import models
 import database
@@ -322,6 +328,22 @@ def get_check_in(
         raise HTTPException(status_code=404, detail="Check-in not found")
     
     return db_check_in
+
+@app.get("/session")
+async def get_session():
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.openai.com/v1/realtime/sessions",
+            headers={
+                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-realtime-preview-2025-06-03",
+                "voice": "verse",
+            }
+        )
+        return response.json()
 
 if __name__ == "__main__":
     import uvicorn
